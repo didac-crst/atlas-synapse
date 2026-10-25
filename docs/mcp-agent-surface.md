@@ -25,7 +25,7 @@ HTTP APIs are unchanged.
 | Catalog | Tool count |
 | --- | ---: |
 | Full registry (`all`) | **41** (incl. aliases) |
-| Default `agent` | **13** |
+| Default `agent` | **15** |
 
 Roughly a **~70% reduction** in tools presented to ChatGPT.
 
@@ -37,12 +37,14 @@ get_relevant_context
 get_timeline
 
 assert_statement
+assert_batch
 correct_statement
 retract_statement
 repair_supersession_integrity
 
 answer_identity_clarification
 answer_semantic_clarification
+challenge_ontology_review
 
 propose_class
 propose_predicate
@@ -60,10 +62,13 @@ apply_ontology_proposal
 | `get_relevant_context` | “What do we know about X?” |
 | `get_timeline` | “How did this evolve?” |
 | `assert_statement` | “Store this fact” |
+| `assert_batch` | “Atomically store related facts / Observations” |
 | `correct_statement` | “Fix this fact” |
 | `retract_statement` | “Withdraw this fact” |
 | `repair_supersession_integrity` | “Fix this bad supersession edge” |
 | `answer_identity_clarification` | “Which Didac?” |
+| `answer_semantic_clarification` | “Answer ontology clarification” |
+| `challenge_ontology_review` | “Retry / challenge after review_failed or rejection” |
 | `propose_*` / `apply_*` | Ontology change lifecycle |
 
 Ontology `apply_ontology_proposal` with `dry_run=true` returns `outcome=WOULD_APPLY`,
@@ -81,10 +86,9 @@ embedded proposal snapshot is a projection, not committed state.
 | `create_entity` / `get_entity` | Covered by assert EntityInput + context |
 | `get_statement` / `explain_statement` | Prefer mutation `return_mode=standard` |
 | Provenance ingest/search tools | Investigation / pipeline |
-| `assert_batch` / `merge_entity` | Explicit advanced ops |
+| `merge_entity` | Explicit advanced ops |
 | `get_runtime_config` | Diagnostics |
 | `propose_constraint` / alias / parent | Less common ontology ops |
-| `challenge_ontology_review` | Review edge path |
 | `report_feedback` | Ops signal |
 
 ## Scenario coverage (agent-only)
@@ -94,10 +98,14 @@ embedded proposal snapshot is a projection, not committed state.
 "Airbus role context"                    → get_relevant_context / get_timeline
 "Correct the start date"                 → correct_statement
 "Store this new fact"                    → assert_statement
+"Import many Observations atomically"    → assert_batch
 "This Didac might already exist"         → assert → answer_identity_clarification
 "Propose a new ontology concept"         → propose_class / propose_predicate
+"Reviewer failed / challenge decision"   → challenge_ontology_review
 "Apply the approved proposal"            → get_ontology_proposal → apply_ontology_proposal
 ```
+
+See also [observation-model.md](observation-model.md) for typed measurement patterns.
 
 ## Deploy note
 

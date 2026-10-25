@@ -19,12 +19,14 @@ def test_agent_surface_is_small_and_intent_shaped() -> None:
     tools = build_mcp_tools(settings=Settings(mcp_tool_surface="agent"))
     names = {tool.name for tool in tools}
     assert names == set(AGENT_TOOL_NAMES)
-    assert len(names) == 13
+    assert len(names) == 15
     assert "search_memory" in names
     assert "get_ontology_proposal" in names
     assert "get_proposal" not in names  # advanced alias only — no agent duplicate
     assert "get_relevant_context" in names
     assert "assert_statement" in names
+    assert "assert_batch" in names
+    assert "challenge_ontology_review" in names
     assert "correct_statement" in names
     assert "retract_statement" in names
     assert "repair_supersession_integrity" in names
@@ -106,8 +108,10 @@ def test_agent_scenario_coverage_catalog() -> None:
         "What about Airbus role?": {"search_memory", "get_relevant_context", "get_timeline"},
         "Correct start date": {"correct_statement"},
         "Store new fact": {"assert_statement"},
+        "Batch Observations": {"assert_batch"},
         "Resolve ambiguous Didac": {"answer_identity_clarification", "assert_statement"},
         "Propose ontology concept": {"propose_class", "propose_predicate"},
+        "Challenge or retry review": {"challenge_ontology_review"},
         "Apply approved proposal": {"get_ontology_proposal", "apply_ontology_proposal"},
         "Repair bad supersession edge": {"repair_supersession_integrity"},
     }

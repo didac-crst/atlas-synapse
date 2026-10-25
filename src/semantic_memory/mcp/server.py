@@ -402,10 +402,13 @@ def build_all_mcp_tools() -> list[ToolSpec]:
         ),
         _payload_tool(
             "assert_batch",
-            "Atomically assert a batch of statements. Prefer assert_statement for "
-            "ordinary single-fact writes.",
+            "Atomically create entities and statements in one transaction (e.g. an "
+            "Observation plus observationOf/observationType/numericValue/unit). "
+            "Rolls back entirely on ambiguity/rejection; reports created/reused/"
+            "ambiguous/rejected/ontology_required buckets. Prefer assert_statement "
+            "for ordinary single-fact writes.",
             lambda session, payload: StatementMCPTools(session).assert_batch(payload),
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         _payload_tool(
             "search_memory",
@@ -558,10 +561,12 @@ def build_all_mcp_tools() -> list[ToolSpec]:
         ),
         _payload_tool(
             "challenge_ontology_review",
-            "Challenge a reject/reuse semantic review with new rationale/evidence.",
+            "Challenge a reject/reuse/manual_review decision, or retry after "
+            "outcome_reason=review_failed, with new rationale/evidence. Prefer "
+            "answer_semantic_clarification when an open clarification_request_id exists.",
             lambda session, payload: OntologyMCPTools(session).challenge_ontology_review(payload),
             request_model=ChallengeOntologyReviewRequest,
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         _payload_tool(
             "answer_semantic_clarification",

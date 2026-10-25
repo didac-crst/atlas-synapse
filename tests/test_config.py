@@ -27,6 +27,8 @@ def test_mcp_server_info_agent_surface_default() -> None:
     assert info.ready is True
     assert info.tool_surface == "agent"
     assert "assert_statement" in info.tools
+    assert "assert_batch" in info.tools
+    assert "challenge_ontology_review" in info.tools
     assert "search_memory" in info.tools
     assert "get_relevant_context" in info.tools
     assert "correct_statement" in info.tools

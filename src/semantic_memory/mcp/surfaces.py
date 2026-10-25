@@ -50,6 +50,7 @@ AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "get_relevant_context",
         "get_timeline",
         "assert_statement",
+        "assert_batch",
         "correct_statement",
         "retract_statement",
         "repair_supersession_integrity",
@@ -59,5 +60,6 @@ AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "get_ontology_proposal",
         "apply_ontology_proposal",
         "answer_semantic_clarification",
+        "challenge_ontology_review",
     }
 )

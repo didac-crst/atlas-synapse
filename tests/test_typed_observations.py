@@ -10,13 +10,14 @@ from sqlalchemy.orm import Session
 
 from semantic_memory.models import ActorStatus, ActorType
 from semantic_memory.models.capabilities import Capability
-from semantic_memory.models.enums import Cardinality, ValueKind
+from semantic_memory.models.enums import BatchStatus, Cardinality, ValueKind
 from semantic_memory.ontology.observation_predicates import (
     OBSERVATION_PREDICATE_PROPOSALS,
     observation_predicate_keys,
 )
 from semantic_memory.repositories.actors import ActorRepository
 from semantic_memory.schemas.actors import ActorEnsureRequest
+from semantic_memory.schemas.batches import AssertBatchRequest, BatchEntityItem, BatchStatementItem
 from semantic_memory.schemas.entities import CreateEntityRequest
 from semantic_memory.schemas.proposals import (
     ApplyProposalRequest,
@@ -26,6 +27,7 @@ from semantic_memory.schemas.proposals import (
 from semantic_memory.schemas.retrieval import SearchStatementsRequest
 from semantic_memory.schemas.statements import AssertStatementRequest
 from semantic_memory.services.actors import ActorService
+from semantic_memory.services.batches import BatchService
 from semantic_memory.services.entities import EntityService
 from semantic_memory.services.proposals import ProposalService
 from semantic_memory.services.retrieval import RetrievalService
@@ -205,3 +207,64 @@ def test_typed_observations_support_person_and_device_numeric_queries(
         )
     )
     assert {hit.statement.subject_entity_id for hit in of_person.hits} == {h1, h2}
+
+
+def test_assert_batch_creates_observation_atomically(db_session: Session) -> None:
+    actor = _ensure_writer(db_session)
+    _install_observation_predicates(db_session)
+    person = _create(db_session, name="Batch-Person", class_key="Person", actor=actor)
+    when = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+
+    result = BatchService(db_session).assert_batch(
+        AssertBatchRequest(
+            **_envelope(actor),
+            entities=[
+                BatchEntityItem(
+                    client_item_id="obs-1",
+                    canonical_name="Batch-Person height 2026-03-01",
+                    class_key="Observation",
+                )
+            ],
+            statements=[
+                BatchStatementItem(
+                    client_item_id="of-1",
+                    subject_client_item_id="obs-1",
+                    predicate_key="observationOf",
+                    object_entity_id=person,
+                ),
+                BatchStatementItem(
+                    client_item_id="type-1",
+                    subject_client_item_id="obs-1",
+                    predicate_key="observationType",
+                    object_string="height",
+                ),
+                BatchStatementItem(
+                    client_item_id="val-1",
+                    subject_client_item_id="obs-1",
+                    predicate_key="numericValue",
+                    object_number=Decimal("100"),
+                    observed_at=when,
+                ),
+                BatchStatementItem(
+                    client_item_id="unit-1",
+                    subject_client_item_id="obs-1",
+                    predicate_key="unit",
+                    object_string="cm",
+                ),
+            ],
+        )
+    )
+    assert result.status == BatchStatus.SUCCEEDED
+    assert result.rejected == []
+    assert result.ambiguous == []
+    assert result.ontology_required == []
+    created_obs = next(item for item in result.created if item.entity is not None)
+    assert created_obs.entity is not None and created_obs.entity.entity is not None
+    obs_id = created_obs.entity.entity.id
+
+    values = RetrievalService(db_session).search_statements(
+        SearchStatementsRequest(predicate_key="numericValue", subject_entity_id=obs_id)
+    )
+    assert len(values.hits) == 1
+    assert Decimal(str(values.hits[0].statement.object_number)) == Decimal("100")
+    assert values.hits[0].statement.observed_at == when
