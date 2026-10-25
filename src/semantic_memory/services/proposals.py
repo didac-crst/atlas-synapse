@@ -99,12 +99,12 @@ from semantic_memory.services.review import (
     ReviewDecision,
     ReviewRequest,
     SemanticReviewer,
-    sanitize_reviewer_exception,
     apply_confidence_policy,
     build_semantic_reviewer,
     default_clarification_asks,
     make_semantic_review_gate,
     review_decision_to_gate,
+    sanitize_reviewer_exception,
 )
 from semantic_memory.services.review_context import (
     CONTEXT_BUILDER_VERSION,

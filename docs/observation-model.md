@@ -33,6 +33,58 @@ Do not put import time in `observed_at`.
 
 Canonical strings (`cm`, `kg`, `C`, `kWh`). No units ontology in V1.
 
+## Agent playbook
+
+### Create one Observation
+
+Prefer `assert_batch` so the entity and required statements commit atomically:
+
+1. Entity `Observation` (deterministic name if helpful: `{subject} — {type} — {YYYY-MM-DD}`).
+2. `observationOf` → subject Thing/Person.
+3. `observationType` → e.g. `height`.
+4. `numericValue` → typed number; set `observed_at` to the measurement time.
+5. `unit` → e.g. `cm`.
+6. Optional: `ensure_source` + `add_evidence` for screenshots / reports.
+
+### Add a subsequent reading
+
+Create a **new** Observation. Do not correct or supersede the prior reading unless
+the prior reading was wrong.
+
+### Correct a reading
+
+Use `correct_statement` on the mistaken `numericValue` (or other) statement. History
+is preserved via supersession.
+
+### Duplicate import vs identical values
+
+- Same MCP `idempotency_key` → replay (safe).
+- Same source measurement id in metadata (when available) → treat as the same import.
+- Same person + type + date + value alone is **not** proof of sameness; two real
+  measurements can match. Do not auto-merge solely on equal numbers.
+
+### Approximate dates
+
+Leave `observed_at` null when unknown; record precision in statement metadata
+(`date_precision`) rather than inventing a calendar day.
+
+### Ontology clarification / reviewer failure
+
+- `outcome_reason=needs_clarification` → `answer_semantic_clarification`.
+- `outcome_reason=review_failed` → retry the same proposal (`challenge_ontology_review`
+  or re-answer the still-open clarification). Do not treat as semantic rejection.
+- Re-proposing the same key reuses the open proposal (`open_proposal_reused`).
+
+### Provenance quality
+
+| Kind | Representation |
+|------|----------------|
+| Screenshot / app export | Source + evidence; metadata `source_type` |
+| Parent-reported approximate | Evidence + lower confidence; not a diagnosis |
+| Clinician-confirmed | Source reliability / evidence |
+| Derived (BMI, percentile) | Separate Observation or Claim with derivation note |
+| LLM hypothesis | Prefer Claim path; never promote to medical fact by assertion alone |
+
 ## Agent anti-patterns
 
 - Do not dump measurement series into Person.`description` (cardinality one → conflicts).
