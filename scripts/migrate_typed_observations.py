@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, select, text
@@ -289,6 +291,44 @@ def _cleanup_descriptions(
     return dict(stats)
 
 
+def _parse_iso(value: str) -> datetime:
+    cleaned = value.strip().replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(cleaned)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _backup_stamp(path: Path) -> datetime:
+    """Prefer UTC stamp embedded in filename; else file mtime."""
+    match = re.search(r"(20\d{2}\d{2}\d{2}T\d{6}Z)", path.name)
+    if match:
+        return _parse_iso(match.group(1))
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+
+
+def _verify_backup(*, backup_path: str, require_after: str | None) -> None:
+    path = Path(backup_path)
+    if not path.is_file():
+        raise SystemExit(f"Backup file not found: {path}")
+    size = path.stat().st_size
+    if size < 1024:
+        raise SystemExit(f"Backup file too small ({size} bytes): {path}")
+    stamp = _backup_stamp(path)
+    print(f"backup_path={path}")
+    print(f"backup_size_bytes={size}")
+    print(f"backup_stamp_utc={stamp.isoformat()}")
+    if require_after:
+        threshold = _parse_iso(require_after)
+        if stamp <= threshold:
+            raise SystemExit(
+                f"Backup stamp {stamp.isoformat()} is not after required "
+                f"{threshold.isoformat()} — take a fresh dump that includes "
+                "current Observations before --execute."
+            )
+        print(f"backup_after_ok={threshold.isoformat()}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -299,7 +339,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--i-have-backup",
         action="store_true",
-        help="Required with --execute: confirm a verified production backup exists.",
+        help="Required with --execute: operator confirms a verified backup exists.",
+    )
+    parser.add_argument(
+        "--backup-path",
+        default="",
+        help="Path to a verified atlas_synapse dump (required with --execute).",
+    )
+    parser.add_argument(
+        "--require-backup-after",
+        default="",
+        help=(
+            "ISO-8601 UTC timestamp. With --execute, backup file stamp/mtime must "
+            "be strictly after this (typically max Observation created_at)."
+        ),
     )
     parser.add_argument(
         "--cleanup-descriptions",
@@ -321,12 +374,27 @@ def main(argv: list[str] | None = None) -> int:
     if args.execute and not args.i_have_backup:
         print("Refusing --execute without --i-have-backup", file=sys.stderr)
         return 2
+    if args.execute and not args.backup_path:
+        print(
+            "Refusing --execute without --backup-path "
+            "(operator flag alone is not backup proof).",
+            file=sys.stderr,
+        )
+        return 2
+    if args.execute:
+        _verify_backup(
+            backup_path=args.backup_path,
+            require_after=args.require_backup_after or None,
+        )
 
     session = _session()
     try:
         inventory = _inventory(session)
         _print_inventory(inventory)
         if args.write_inventory:
+            parent = os.path.dirname(args.write_inventory)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
             with open(args.write_inventory, "w", encoding="utf-8") as handle:
                 json.dump(inventory, handle, indent=2, default=str)
             print(f"wrote_inventory={args.write_inventory}")
