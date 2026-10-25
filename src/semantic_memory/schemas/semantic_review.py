@@ -15,6 +15,25 @@ from semantic_memory.schemas.common import MutationEnvelope
 # AtlasSynapse-issued reason when a clarification request is opened.
 CLARIFICATION_REASON_CODE = "semantic_distinction_unclear"
 
+# Machine-readable governance outcome reasons (not new persisted proposal statuses).
+REVIEW_OUTCOME_NEEDS_CLARIFICATION = "needs_clarification"
+REVIEW_OUTCOME_REVIEW_FAILED = "review_failed"
+REVIEW_OUTCOME_REJECTED = "rejected"
+REVIEW_OUTCOME_READY_TO_APPLY = "ready_to_apply"
+REVIEW_OUTCOME_REUSE_RECOMMENDED = "reuse_recommended"
+REVIEW_OUTCOME_OPEN_PROPOSAL_REUSED = "open_proposal_reused"
+
+
+class ReviewOutcomeReason(StrEnum):
+    """Explicit reason codes distinguishing infra failure from semantic decisions."""
+
+    NEEDS_CLARIFICATION = REVIEW_OUTCOME_NEEDS_CLARIFICATION
+    REVIEW_FAILED = REVIEW_OUTCOME_REVIEW_FAILED
+    REJECTED = REVIEW_OUTCOME_REJECTED
+    READY_TO_APPLY = REVIEW_OUTCOME_READY_TO_APPLY
+    REUSE_RECOMMENDED = REVIEW_OUTCOME_REUSE_RECOMMENDED
+    OPEN_PROPOSAL_REUSED = REVIEW_OUTCOME_OPEN_PROPOSAL_REUSED
+
 
 class SemanticDecision(StrEnum):
     APPROVE = "approve"
@@ -115,6 +134,7 @@ class ChallengeOntologyReviewResponse(BaseModel):
     challenge_id: uuid.UUID
     review: SemanticReviewResponse
     open_clarification_request: ClarificationRequestResponse | None = None
+    outcome_reason: str | None = None
     request_id: uuid.UUID
 
 
@@ -138,4 +158,5 @@ class AnswerSemanticClarificationResponse(BaseModel):
     resolved_by_review_id: uuid.UUID | None = None
     review: SemanticReviewResponse
     open_clarification_request: ClarificationRequestResponse | None = None
+    outcome_reason: str | None = None
     request_id: uuid.UUID

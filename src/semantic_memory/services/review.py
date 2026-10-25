@@ -15,6 +15,7 @@ from typing import Any, Protocol, runtime_checkable
 from semantic_memory.config import Settings, get_settings
 from semantic_memory.models.enums import GateDecision, LlmCallStatus, ProposalType
 from semantic_memory.schemas.semantic_review import (
+    REVIEW_OUTCOME_REVIEW_FAILED,
     RelatedExistingConcept,
     ReviewReason,
     SemanticDecision,
@@ -259,6 +260,35 @@ class ExternalSemanticReviewer:
         )
 
 
+def sanitize_reviewer_exception(exc: BaseException) -> dict[str, str]:
+    """Return log-safe failure diagnostics without secrets or prompt bodies."""
+    raw = str(exc)
+    # Strip anything that looks like a bearer token or long opaque secret.
+    lowered = raw.lower()
+    if "bearer " in lowered or "api_key" in lowered or "authorization" in lowered:
+        detail = f"{type(exc).__name__}:[redacted]"
+    else:
+        detail = raw[:500]
+    message = detail.lower()
+    if "openai_http_5" in message or "http_5" in message:
+        category = "upstream_5xx"
+    elif "openai_http_4" in message or "http_4" in message:
+        category = "upstream_4xx"
+    elif "invalid_response" in message:
+        category = "invalid_response"
+    elif "timeout" in message or "timed out" in message:
+        category = "timeout"
+    elif "unavailable" in message or "urlerror" in message or "connection" in message:
+        category = "network"
+    else:
+        category = "runtime_error"
+    return {
+        "error_type": type(exc).__name__,
+        "error_detail": detail,
+        "failure_category": category,
+    }
+
+
 class LoggingSemanticReviewer:
     """Wrap a reviewer so every call is recorded in ``llm_call_log``."""
 
@@ -304,6 +334,7 @@ class LoggingSemanticReviewer:
         try:
             result = self._inner.review(request)
         except Exception as exc:
+            sanitized = sanitize_reviewer_exception(exc)
             self._logger.complete(
                 call,
                 LlmCallCompletion(
@@ -312,7 +343,12 @@ class LoggingSemanticReviewer:
                     reason="reviewer_failure",
                     error_code="DEPENDENCY_UNAVAILABLE",
                     error_message="Semantic reviewer call failed",
-                    metadata={"error_type": type(exc).__name__},
+                    metadata={
+                        "error_type": sanitized["error_type"],
+                        "error_detail": sanitized["error_detail"],
+                        "failure_category": sanitized["failure_category"],
+                        "outcome_reason": REVIEW_OUTCOME_REVIEW_FAILED,
+                    },
                 ),
             )
             raise
@@ -682,6 +718,7 @@ def make_semantic_review_gate(
         except Exception as exc:  # noqa: BLE001 - degrade to manual_review
             SEMANTIC_REVIEW_METRICS.record_review(decision="manual_review")
             shadow = settings.semantic_review_mode == "shadow"
+            sanitized = sanitize_reviewer_exception(exc)
             return GateOutcome(
                 "semantic_review",
                 GateDecision.MANUAL_REVIEW,
@@ -697,11 +734,17 @@ def make_semantic_review_gate(
                         }
                     ],
                     "related_existing_concepts": [],
-                    "recommended_actions": ["Retry later", "Route to manual review"],
+                    "recommended_actions": [
+                        "Retry later",
+                        "Challenge or re-propose after reviewer recovery",
+                    ],
                     "context_sufficient": False,
                     "challengeable": True,
                     "reason": "reviewer_failure",
-                    "error_type": type(exc).__name__,
+                    "outcome_reason": REVIEW_OUTCOME_REVIEW_FAILED,
+                    "error_type": sanitized["error_type"],
+                    "error_detail": sanitized["error_detail"],
+                    "failure_category": sanitized["failure_category"],
                     "authoritative": not shadow,
                     "shadow": shadow,
                     "shadow_effect": "manual_review" if shadow else None,

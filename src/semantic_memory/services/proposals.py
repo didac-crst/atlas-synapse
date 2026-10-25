@@ -70,6 +70,12 @@ from semantic_memory.schemas.proposals import (
 )
 from semantic_memory.schemas.semantic_review import (
     CLARIFICATION_REASON_CODE,
+    REVIEW_OUTCOME_NEEDS_CLARIFICATION,
+    REVIEW_OUTCOME_OPEN_PROPOSAL_REUSED,
+    REVIEW_OUTCOME_READY_TO_APPLY,
+    REVIEW_OUTCOME_REJECTED,
+    REVIEW_OUTCOME_REUSE_RECOMMENDED,
+    REVIEW_OUTCOME_REVIEW_FAILED,
     AnswerSemanticClarificationRequest,
     AnswerSemanticClarificationResponse,
     ChallengeOntologyReviewRequest,
@@ -93,6 +99,7 @@ from semantic_memory.services.review import (
     ReviewDecision,
     ReviewRequest,
     SemanticReviewer,
+    sanitize_reviewer_exception,
     apply_confidence_policy,
     build_semantic_reviewer,
     default_clarification_asks,
@@ -296,6 +303,20 @@ class ProposalService:
         payload: dict[str, Any],
         base_revision_number: int | None,
     ) -> ProposeResponse:
+        existing_open = self._governance.find_open_proposal_by_key(
+            proposal_type=proposal_type.value,
+            key=str(payload.get("key") or payload.get("child_key") or ""),
+            namespace_key=str(payload.get("namespace_key") or "core"),
+        )
+        if existing_open is not None:
+            return ProposeResponse(
+                outcome=self._outcome_for_status(existing_open.status),
+                proposal=self._to_proposal_response(existing_open),
+                open_clarification_request=self._open_clarification_response(existing_open.id),
+                outcome_reason=REVIEW_OUTCOME_OPEN_PROPOSAL_REUSED,
+                request_id=request_id,
+            )
+
         proposal = self._governance.create_proposal(
             proposed_by_actor_id=actor_id,
             proposal_type=proposal_type.value,
@@ -345,21 +366,30 @@ class ProposalService:
             provider=provider,
             model=model,
         )
-        outcome, status, reason = self._aggregate(outcomes, proposal=proposal)
+        outcome, status, reason, outcome_reason = self._aggregate(outcomes, proposal=proposal)
         self._governance.set_proposal_status(proposal, status=status, decision_reason=reason)
         return ProposeResponse(
             outcome=outcome,
             proposal=self._to_proposal_response(proposal),
             open_clarification_request=self._open_clarification_response(proposal.id),
+            outcome_reason=outcome_reason,
             request_id=request_id,
         )
+
+    @staticmethod
+    def _outcome_for_status(status: str) -> ProposalOutcome:
+        if status == ProposalStatus.IN_REVIEW.value:
+            return ProposalOutcome.MANUAL_REVIEW
+        if status == ProposalStatus.REJECTED.value:
+            return ProposalOutcome.REJECTED
+        return ProposalOutcome.READY_TO_APPLY
 
     def _aggregate(
         self,
         outcomes: list[Any],
         *,
         proposal: OntologyProposal | None = None,
-    ) -> tuple[ProposalOutcome, ProposalStatus, str | None]:
+    ) -> tuple[ProposalOutcome, ProposalStatus, str | None, str]:
         # Historical semantic_review gate rows stay append-only; effective review wins.
         effective_decision = self._effective_semantic_gate_decision(proposal)
         non_semantic = [item for item in outcomes if item.gate_name != "semantic_review"]
@@ -378,6 +408,7 @@ class ProposalService:
                 ProposalOutcome.REJECTED,
                 ProposalStatus.REJECTED,
                 f"Failed gates: {', '.join(failed)}",
+                REVIEW_OUTCOME_REJECTED,
             )
         if semantic_decision == GateDecision.REUSE_RECOMMENDED or any(
             item.decision == GateDecision.REUSE_RECOMMENDED for item in non_semantic
@@ -386,16 +417,60 @@ class ProposalService:
                 ProposalOutcome.REUSE_RECOMMENDED,
                 ProposalStatus.REJECTED,
                 "Reuse an existing ontology concept",
+                REVIEW_OUTCOME_REUSE_RECOMMENDED,
             )
         if semantic_decision == GateDecision.MANUAL_REVIEW or any(
             item.decision == GateDecision.MANUAL_REVIEW for item in non_semantic
         ):
+            outcome_reason = self._manual_review_outcome_reason(
+                proposal=proposal,
+                semantic_gate=semantic_gate,
+            )
+            decision_reason = (
+                "Semantic reviewer unavailable"
+                if outcome_reason == REVIEW_OUTCOME_REVIEW_FAILED
+                else "Semantic clarification required"
+            )
             return (
                 ProposalOutcome.MANUAL_REVIEW,
                 ProposalStatus.IN_REVIEW,
-                "Semantic review required",
+                decision_reason,
+                outcome_reason,
             )
-        return ProposalOutcome.READY_TO_APPLY, ProposalStatus.SUBMITTED, None
+        return (
+            ProposalOutcome.READY_TO_APPLY,
+            ProposalStatus.SUBMITTED,
+            None,
+            REVIEW_OUTCOME_READY_TO_APPLY,
+        )
+
+    def _manual_review_outcome_reason(
+        self,
+        *,
+        proposal: OntologyProposal | None,
+        semantic_gate: Any | None,
+    ) -> str:
+        """Distinguish infrastructure failure from genuine semantic ambiguity."""
+        details: dict[str, Any] = {}
+        if semantic_gate is not None and isinstance(getattr(semantic_gate, "details", None), dict):
+            details = dict(semantic_gate.details or {})
+        if proposal is not None and proposal.effective_semantic_review_id is not None:
+            review = self._governance.get_semantic_review(proposal.effective_semantic_review_id)
+            if review is not None and isinstance(review.details, dict):
+                details = {**details, **dict(review.details)}
+            if review is not None:
+                reason_codes = {
+                    str(item.get("code"))
+                    for item in (review.reasons or [])
+                    if isinstance(item, dict) and item.get("code")
+                }
+                if "semantic_reviewer_unavailable" in reason_codes:
+                    return REVIEW_OUTCOME_REVIEW_FAILED
+        if details.get("reason") == "reviewer_failure":
+            return REVIEW_OUTCOME_REVIEW_FAILED
+        if details.get("outcome_reason") == REVIEW_OUTCOME_REVIEW_FAILED:
+            return REVIEW_OUTCOME_REVIEW_FAILED
+        return REVIEW_OUTCOME_NEEDS_CLARIFICATION
 
     def _effective_semantic_gate_decision(
         self, proposal: OntologyProposal | None
@@ -576,6 +651,7 @@ class ProposalService:
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            sanitized = sanitize_reviewer_exception(exc)
             structured = StructuredReviewResult(
                 decision=SemanticDecision.MANUAL_REVIEW,
                 confidence=0.0,
@@ -591,7 +667,11 @@ class ProposalService:
                 previous_decision=SemanticDecision(prior.decision),
                 decision_changed=False,
             )
-            details = {"reason": "reviewer_failure", "error_type": type(exc).__name__}
+            details = {
+                "reason": "reviewer_failure",
+                "outcome_reason": REVIEW_OUTCOME_REVIEW_FAILED,
+                **sanitized,
+            }
             input_tokens = output_tokens = None
             prompt_version = PROMPT_TEMPLATE_VERSION
         else:
@@ -676,7 +756,7 @@ class ProposalService:
         # Do NOT mutate historical ontology_gate_result rows.
         from semantic_memory.services.gates import GateOutcome
 
-        outcome, status, reason = self._aggregate(
+        outcome, status, reason, outcome_reason = self._aggregate(
             [
                 GateOutcome(
                     gate_name=item.gate_name,
@@ -701,6 +781,7 @@ class ProposalService:
             challenge_id=challenge.id,
             review=self._to_semantic_review_response(review),
             open_clarification_request=self._open_clarification_response(proposal.id),
+            outcome_reason=outcome_reason,
             request_id=request.request_id,
         )
 
@@ -782,12 +863,12 @@ class ProposalService:
                 request_id=str(request.request_id),
             )
 
-        self._governance.mark_clarification_answered(
-            clarification,
-            answer_text=answer,
-            answered_by_actor_id=actor_id,
-            evidence_refs=request.evidence_refs,
-        )
+        # Persist the draft answer while the request stays OPEN so a reviewer
+        # infrastructure failure never permanently consumes a valid answer.
+        clarification.answer_text = answer
+        clarification.answered_by_actor_id = actor_id
+        clarification.evidence_refs = request.evidence_refs or []
+        self._session.flush()
 
         proposal_type = ProposalType(proposal.proposal_type)
         review_context = SemanticReviewContextBuilder(self._session, self._settings).build(
@@ -796,6 +877,7 @@ class ProposalService:
         )
         prior_structured = _review_row_to_structured(prior)
         proposal_key = str(proposal.payload.get("key") or "")
+        reviewer_failed = False
         try:
             raw = self._reviewer.review(
                 ReviewRequest(
@@ -812,6 +894,8 @@ class ProposalService:
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            reviewer_failed = True
+            sanitized = sanitize_reviewer_exception(exc)
             structured = StructuredReviewResult(
                 decision=SemanticDecision.MANUAL_REVIEW,
                 confidence=0.0,
@@ -827,7 +911,11 @@ class ProposalService:
                 previous_decision=SemanticDecision(prior.decision),
                 decision_changed=False,
             )
-            details = {"reason": "reviewer_failure", "error_type": type(exc).__name__}
+            details = {
+                "reason": "reviewer_failure",
+                "outcome_reason": REVIEW_OUTCOME_REVIEW_FAILED,
+                **sanitized,
+            }
             input_tokens = output_tokens = None
             prompt_version = PROMPT_TEMPLATE_VERSION
         else:
@@ -892,7 +980,36 @@ class ProposalService:
                 "candidate_selection_trace": list(review_context.candidate_selection_trace),
                 "required_clarification": list(structured.required_clarification),
                 "answered_clarification_request_id": str(clarification.id),
+                "draft_answer_preserved": reviewer_failed,
             },
+        )
+
+        if reviewer_failed:
+            # Keep the same clarification OPEN for retry; draft answer remains.
+            self._governance.set_effective_semantic_review(proposal, review.id)
+            self._governance.set_proposal_status(
+                proposal,
+                status=ProposalStatus.IN_REVIEW,
+                decision_reason="Semantic reviewer unavailable",
+            )
+            self._session.refresh(clarification)
+            return AnswerSemanticClarificationResponse(
+                outcome=ProposalOutcome.MANUAL_REVIEW.value,
+                proposal_id=proposal.id,
+                clarification_request_id=clarification.id,
+                clarification_status=SemanticClarificationStatus(clarification.status),
+                resolved_by_review_id=None,
+                review=self._to_semantic_review_response(review),
+                open_clarification_request=self._open_clarification_response(proposal.id),
+                outcome_reason=REVIEW_OUTCOME_REVIEW_FAILED,
+                request_id=request.request_id,
+            )
+
+        self._governance.mark_clarification_answered(
+            clarification,
+            answer_text=answer,
+            answered_by_actor_id=actor_id,
+            evidence_refs=request.evidence_refs,
         )
         self._governance.mark_clarification_resolved(clarification, resulting_review_id=review.id)
         self._governance.set_effective_semantic_review(proposal, review.id)
@@ -900,7 +1017,7 @@ class ProposalService:
 
         from semantic_memory.services.gates import GateOutcome
 
-        outcome, status, reason = self._aggregate(
+        outcome, status, reason, outcome_reason = self._aggregate(
             [
                 GateOutcome(
                     gate_name=item.gate_name,
@@ -938,6 +1055,7 @@ class ProposalService:
             resolved_by_review_id=clarification.resulting_review_id,
             review=self._to_semantic_review_response(review),
             open_clarification_request=self._open_clarification_response(proposal.id),
+            outcome_reason=outcome_reason,
             request_id=request.request_id,
         )
 
@@ -1088,6 +1206,12 @@ class ProposalService:
             proposal,
             status=ProposalStatus.ACCEPTED,
             decision_reason="Applied by authorized actor",
+        )
+        self._governance.supersede_open_sibling_proposals(
+            accepted=proposal,
+            decision_reason=(
+                f"Superseded by accepted proposal {proposal.id} for the same ontology key"
+            ),
         )
         return ApplyProposalResponse(
             outcome=ProposalOutcome.APPLIED,

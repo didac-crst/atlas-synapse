@@ -141,6 +141,87 @@ class GovernanceRepository:
             stmt = stmt.where(OntologyProposal.created_at <= created_before)
         return stmt
 
+    def find_open_proposal_by_key(
+        self,
+        *,
+        proposal_type: str,
+        key: str,
+        namespace_key: str | None = None,
+    ) -> OntologyProposal | None:
+        """Return the newest open proposal for the same ontology key, if any.
+
+        Open means draft / submitted / in_review. Never returns accepted,
+        rejected, or cancelled rows. History is preserved when callers
+        supersede siblings after accept.
+        """
+        cleaned = key.casefold().strip()
+        if not cleaned:
+            return None
+        ns = (namespace_key or "core").casefold().strip()
+        open_statuses = (
+            ProposalStatus.DRAFT.value,
+            ProposalStatus.SUBMITTED.value,
+            ProposalStatus.IN_REVIEW.value,
+        )
+        for status in open_statuses:
+            rows = self.list_proposals(
+                status=status,
+                proposal_type=proposal_type,
+                limit=100,
+            )
+            for row in rows:
+                payload = row.payload if isinstance(row.payload, dict) else {}
+                row_key = str(payload.get("key") or payload.get("child_key") or "").casefold()
+                if row_key != cleaned:
+                    continue
+                row_ns = str(payload.get("namespace_key") or "core").casefold()
+                if row_ns != ns:
+                    continue
+                return row
+        return None
+
+    def supersede_open_sibling_proposals(
+        self,
+        *,
+        accepted: OntologyProposal,
+        decision_reason: str,
+    ) -> list[uuid.UUID]:
+        """Cancel other open proposals for the same key after one is accepted."""
+        payload = accepted.payload if isinstance(accepted.payload, dict) else {}
+        key = str(payload.get("key") or payload.get("child_key") or "").strip()
+        if not key:
+            return []
+        ns = str(payload.get("namespace_key") or "core")
+        cancelled: list[uuid.UUID] = []
+        open_statuses = (
+            ProposalStatus.DRAFT.value,
+            ProposalStatus.SUBMITTED.value,
+            ProposalStatus.IN_REVIEW.value,
+        )
+        for status in open_statuses:
+            rows = self.list_proposals(
+                status=status,
+                proposal_type=accepted.proposal_type,
+                limit=100,
+            )
+            for row in rows:
+                if row.id == accepted.id:
+                    continue
+                other = row.payload if isinstance(row.payload, dict) else {}
+                other_key = str(other.get("key") or other.get("child_key") or "").casefold()
+                if other_key != key.casefold():
+                    continue
+                other_ns = str(other.get("namespace_key") or "core").casefold()
+                if other_ns != ns.casefold():
+                    continue
+                self.set_proposal_status(
+                    row,
+                    status=ProposalStatus.CANCELLED,
+                    decision_reason=decision_reason,
+                )
+                cancelled.append(row.id)
+        return cancelled
+
     def create_proposal(
         self,
         *,

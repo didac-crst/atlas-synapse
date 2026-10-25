@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -136,31 +137,14 @@ class OpenAISemanticReviewer:
             body["reasoning_effort"] = self._settings.semantic_review_reasoning_effort
 
         payload = json.dumps(body).encode("utf-8")
-        request = urllib.request.Request(
-            url=f"{self._settings.semantic_review_api_base.rstrip('/')}/chat/completions",
-            data=payload,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {self._settings.semantic_review_api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-        try:
-            with urllib.request.urlopen(
-                request, timeout=self._settings.semantic_review_timeout_seconds
-            ) as response:
-                raw = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"openai_http_{exc.code}:{detail[:300]}") from exc
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"openai_unavailable:{type(exc).__name__}") from exc
+        raw = self._chat_completions_with_retries(payload)
 
         try:
             content = raw["choices"][0]["message"]["content"]
             parsed = json.loads(content) if isinstance(content, str) else content
             result = StructuredReviewResult.model_validate(parsed)
         except Exception as exc:  # noqa: BLE001
+            # Invalid structured output is not retried as a transient failure.
             raise RuntimeError("semantic_reviewer_invalid_response") from exc
 
         usage = raw.get("usage") or {}
@@ -171,6 +155,40 @@ class OpenAISemanticReviewer:
             "prompt_template_version": PROMPT_TEMPLATE_VERSION,
         }
         return result, meta
+
+    def _chat_completions_with_retries(self, payload: bytes) -> dict[str, Any]:
+        """Call the provider once, then retry only transient network/5xx failures."""
+        attempts = 1 + max(0, int(self._settings.semantic_review_transient_retries))
+        backoff = float(self._settings.semantic_review_retry_backoff_seconds)
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            request = urllib.request.Request(
+                url=f"{self._settings.semantic_review_api_base.rstrip('/')}/chat/completions",
+                data=payload,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {self._settings.semantic_review_api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=self._settings.semantic_review_timeout_seconds
+                ) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")
+                last_error = RuntimeError(f"openai_http_{exc.code}:{detail[:300]}")
+                if exc.code < 500 or attempt >= attempts - 1:
+                    raise last_error from exc
+            except Exception as exc:  # noqa: BLE001
+                last_error = RuntimeError(f"openai_unavailable:{type(exc).__name__}")
+                if attempt >= attempts - 1:
+                    raise last_error from exc
+            if backoff > 0:
+                time.sleep(backoff * (attempt + 1))
+        assert last_error is not None
+        raise last_error
 
     def _build_user_prompt(
         self,

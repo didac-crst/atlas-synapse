@@ -79,6 +79,22 @@ class Settings(BaseSettings):
     semantic_review_timeout_seconds: float = Field(
         default=45.0, alias="SEMANTIC_REVIEW_TIMEOUT_SECONDS", gt=0
     )
+    semantic_review_transient_retries: int = Field(
+        default=2,
+        alias="SEMANTIC_REVIEW_TRANSIENT_RETRIES",
+        ge=0,
+        le=5,
+        description=(
+            "Extra attempts after the first call for transient network/5xx failures only. "
+            "Semantic rejections and invalid structured output are never retried."
+        ),
+    )
+    semantic_review_retry_backoff_seconds: float = Field(
+        default=0.5,
+        alias="SEMANTIC_REVIEW_RETRY_BACKOFF_SECONDS",
+        ge=0.0,
+        le=10.0,
+    )
     identity_review_mode: Literal["disabled", "mock", "shadow", "external"] = Field(
         default="disabled",
         alias="IDENTITY_REVIEW_MODE",

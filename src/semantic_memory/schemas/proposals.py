@@ -156,6 +156,7 @@ class ProposeResponse(BaseModel):
     outcome: ProposalOutcome
     proposal: ProposalResponse
     open_clarification_request: ClarificationRequestResponse | None = None
+    outcome_reason: str | None = None
     request_id: uuid.UUID
 
 
