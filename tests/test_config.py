@@ -32,6 +32,11 @@ def test_mcp_server_info_agent_surface_default() -> None:
     assert "search_memory" in info.tools
     assert "get_relevant_context" in info.tools
     assert "correct_statement" in info.tools
+    assert "ensure_source" in info.tools
+    assert "ingest_source_content" in info.tools
+    assert "get_source_content" in info.tools
+    assert "search_source_content" in info.tools
+    assert "add_evidence" not in info.tools
     assert "create_entity" not in info.tools
     assert "supersede_statement" not in info.tools
     assert "get_entity_neighborhood" not in info.tools

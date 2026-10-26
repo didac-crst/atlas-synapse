@@ -4,10 +4,11 @@ The MCP adapter exposes semantic operations only. It must not expose raw SQL, DD
 
 The production transport is stdio via `semantic-memory-mcp` (MCP 2024-11-05 newline-delimited JSON-RPC). Tool handlers stay thin translations over services; HTTP MCP transport is not implemented yet.
 
-**Tool surfaces:** `MCP_TOOL_SURFACE=agent` (default) advertises **18** intent-shaped
-tools to ChatGPT (including ontology discovery and `query_observations`).
-`advanced` / `admin` / `all` expand the catalog. Visibility is UX only —
-capabilities still authorize writes. See `docs/mcp-agent-surface.md`.
+**Tool surfaces:** `MCP_TOOL_SURFACE=agent` (default) advertises **22** intent-shaped
+tools to ChatGPT (including ontology discovery, `query_observations`, and
+document content ingest/read/search). `advanced` / `admin` / `all` expand the
+catalog. Visibility is UX only — capabilities still authorize writes. See
+`docs/mcp-agent-surface.md`.
 
 ## Read tools
 
@@ -49,9 +50,15 @@ merge_entity
 ```
 
 The default **agent** surface (`AGENT_TOOL_NAMES`) includes `assert_statement`,
-`correct_statement`, `retract_statement`, and `repair_supersession_integrity`
-among its tools; other write
-tools above remain on advanced/all. See [mcp-agent-surface.md](mcp-agent-surface.md).
+`correct_statement`, `retract_statement`, `repair_supersession_integrity`,
+`ensure_source`, and `ingest_source_content` among its tools; `add_evidence`
+and other investigation writes remain on advanced/all. See
+[mcp-agent-surface.md](mcp-agent-surface.md).
+
+`ingest_source_content` accepts textual `content_format` values
+(`html` | `markdown` | `text`) only — not PDF/binary. Pass
+`document_entity_id` to attach a revision to an existing Document without
+re-asserting domain facts.
 
 ## Ontology proposal tools
 

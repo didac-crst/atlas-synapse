@@ -25,9 +25,9 @@ HTTP APIs are unchanged.
 | Catalog | Tool count |
 | --- | ---: |
 | Full registry (`all`) | **43** (incl. aliases) |
-| Default `agent` | **18** |
+| Default `agent` | **22** |
 
-Roughly a **~60% reduction** in tools presented to ChatGPT vs the full registry.
+Roughly a **~50% reduction** in tools presented to ChatGPT vs the full registry.
 
 ## Agent catalog
 
@@ -46,6 +46,11 @@ correct_statement
 retract_statement
 repair_supersession_integrity
 
+ensure_source
+ingest_source_content
+get_source_content
+search_source_content
+
 answer_identity_clarification
 answer_semantic_clarification
 challenge_ontology_review
@@ -57,7 +62,8 @@ apply_ontology_proposal
 ```
 
 (`get_proposal` remains on the advanced surface as an alias.
-`get_class` / `get_predicate` stay advanced.)
+`get_class` / `get_predicate` stay advanced. `add_evidence` stays advanced —
+document *body* storage uses `ingest_source_content`, not evidence rows.)
 
 ### Why these are agent-shaped
 
@@ -74,10 +80,19 @@ apply_ontology_proposal
 | `correct_statement` | “Fix this fact” |
 | `retract_statement` | “Withdraw this fact” |
 | `repair_supersession_integrity` | “Fix this bad supersession edge” |
+| `ensure_source` | “Create/reuse a provenance source” |
+| `ingest_source_content` | “Attach article/OCR text to a Document/source” |
+| `get_source_content` | “Read stored document text / revision” |
+| `search_source_content` | “Find a passage inside a document body” |
 | `answer_identity_clarification` | “Which Didac?” |
 | `answer_semantic_clarification` | “Answer ontology clarification” |
 | `challenge_ontology_review` | “Retry / challenge after review_failed or rejection” |
 | `propose_*` / `apply_*` | Ontology change lifecycle |
+
+Document content supports `content_format` ∈ `{html, markdown, text}` only.
+PDF/binary blobs are **not** a supported ingest format — store OCR/transcription
+text (preserving original language) against an existing Document via
+`document_entity_id` instead of inventing a parallel document store.
 
 Ontology discovery is for **semantic uncertainty** (unfamiliar concept, unsure
 predicate, validation failure, possible ontology drift, before proposing). Do
@@ -98,7 +113,7 @@ embedded proposal snapshot is a projection, not committed state.
 | `get_class` / `get_predicate` | Prefer `search_ontology` + `get_ontology_context` |
 | `create_entity` / `get_entity` | Covered by assert EntityInput + context |
 | `get_statement` / `explain_statement` | Prefer mutation `return_mode=standard` |
-| Provenance ingest/search tools | Investigation / pipeline |
+| `add_evidence` | Statement↔source evidence links; body text uses ingest |
 | `merge_entity` | Explicit advanced ops |
 | `get_runtime_config` | Diagnostics |
 | `propose_constraint` / alias / parent | Less common ontology ops |
@@ -114,6 +129,8 @@ embedded proposal snapshot is a projection, not committed state.
 "Correct the start date"                 → correct_statement
 "Store this new fact"                    → assert_statement (discover only if unsure)
 "Import many Observations atomically"    → assert_batch
+"Attach OCR/transcription to Document"   → ingest_source_content (+ get_source_content)
+"Search inside document body"            → search_source_content
 "This Didac might already exist"         → assert → answer_identity_clarification
 "Propose a new ontology concept"         → search_ontology first → propose_*
 "Reviewer failed / challenge decision"   → challenge_ontology_review

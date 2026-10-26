@@ -305,35 +305,43 @@ def build_all_mcp_tools() -> list[ToolSpec]:
         ),
         _payload_tool(
             "ensure_source",
-            "Ensure a reusable provenance source (create or reuse by identity).",
+            "Ensure a reusable provenance source (create or reuse by identity). "
+            "Optionally link source.entity_id to an existing Document. Prefer this "
+            "before ingest_source_content when you need a stable source_id first.",
             lambda session, payload: StatementMCPTools(session).ensure_source(payload),
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         _payload_tool(
             "ingest_source_content",
-            "Ingest source content. Prefer content + content_format (html|markdown|text); "
-            "AtlasSynapse preserves the exact original and deterministically canonicalizes "
-            "(HTML→Markdown v1). Optional canonical_format defaults to markdown.",
+            "Attach text document content to a provenance source (and optionally an "
+            "existing Document via document_entity_id). Prefer content + "
+            "content_format in {html, markdown, text}. Preserves the exact original "
+            "and canonicalizes (HTML→Markdown v1). Use for OCR/transcription or "
+            "article bodies — not PDF/binary blobs (unsupported). Does not create "
+            "domain Statements; avoids duplicating already-asserted facts.",
             lambda session, payload: StatementMCPTools(session).ingest_source_content(payload),
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         _payload_tool(
             "get_source_content",
             "Fetch latest or specific source content revision by source_id, "
-            "document_entity_id, or revision_id.",
+            "document_entity_id, or revision_id (include_original to read preserved "
+            "original text, e.g. German OCR).",
             lambda session, payload: StatementMCPTools(session).get_source_content(payload),
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         _payload_tool(
             "search_source_content",
             "Lexical search over canonical source content; returns passages with "
-            "revision-qualified locators.",
+            "revision-qualified locators. Filter by source_id or document_entity_id.",
             lambda session, payload: StatementMCPTools(session).search_source_content(payload),
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         _payload_tool(
             "add_evidence",
-            "Attach evidence to a statement.",
+            "Attach evidence to a statement (link statement → source/excerpt). "
+            "Not required to store document body text — use ingest_source_content "
+            "for that.",
             lambda session, payload: StatementMCPTools(session).add_evidence(payload),
             surface=McpToolSurface.ADVANCED,
         ),
@@ -637,6 +645,10 @@ def _agent_instructions(cfg: Settings) -> str:
             "Prefer search_memory / get_relevant_context for reads; "
             "assert_statement / correct_statement / retract_statement for writes "
             "(return_mode=standard describes the state transition). "
+            "Document bodies: ingest_source_content with content_format "
+            "html|markdown|text (not PDF/binary); get_source_content / "
+            "search_source_content to read/search; pass document_entity_id to "
+            "attach to an existing Document without re-asserting facts. "
             "Use answer_identity_clarification when outcome=CLARIFY. "
             "Ontology: propose_class or propose_predicate, then apply_ontology_proposal "
             "when READY_TO_APPLY. Mutations need request_id + idempotency_key; "

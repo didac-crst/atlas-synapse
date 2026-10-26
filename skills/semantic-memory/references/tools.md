@@ -33,7 +33,8 @@ assume that tool exists in ChatGPT.
 | `assert_batch` | Fall back to sequenced `assert_statement` only when the user accepts non-atomic risk; say so. |
 | `correct_statement` | Do not invent supersession manually; disclose and stop. |
 | `answer_identity_clarification` | Do not pick an ambiguous entity; ask the user and wait for a path that can resume CLARIFY. |
-| `ensure_source` / `add_evidence` | Expected absent on agent surface. Store the fact only if authorized; **do not** claim provenance was attached. |
+| `ensure_source` / `ingest_source_content` / `get_source_content` | Disclose; do not dump OCR into `description` or invent a parallel store. Do not claim PDF binary ingest. |
+| `add_evidence` | Often advanced-only. Document body storage uses ingest; do not claim statement evidence rows without this tool. |
 | `find_conflicts` / resolve tools | Expected absent on agent surface. Disclose open `conflict_ids`; do not invent resolve. |
 | Any write tool | Prefer read-only help; never invent success. |
 

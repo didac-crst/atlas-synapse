@@ -6,7 +6,7 @@ description: >
   and retrieval. Prefer live MCP tools over inventing schema or IDs.
 metadata:
   atlas_synapse:
-    skill_version: "0.2.1"
+    skill_version: "0.2.2"
     requires_package_version_min: "0.1.0.dev6"
     expected_tool_surface: agent
     expected_tools:
@@ -21,6 +21,10 @@ metadata:
       - correct_statement
       - retract_statement
       - repair_supersession_integrity
+      - ensure_source
+      - ingest_source_content
+      - get_source_content
+      - search_source_content
       - answer_identity_clarification
       - answer_semantic_clarification
       - challenge_ontology_review
@@ -90,6 +94,7 @@ Load `references/` only when needed for the current task.
 | Atomic Observation / multi-fact | `assert_batch` |
 | Fix mistaken record / withdraw | `correct_statement`, `retract_statement` |
 | Bad supersession edge | `repair_supersession_integrity` |
+| Attach/read document text (OCR, articles) | `ingest_source_content`, `get_source_content`, `search_source_content` |
 | Identity clarify | `answer_identity_clarification` |
 | Ontology lifecycle | `propose_*`, clarifications, `apply_ontology_proposal` |
 
@@ -118,5 +123,6 @@ Load `references/` only when needed for the current task.
 | `references/knowledge-evolution.md` | Mistake vs change vs conflicting evidence |
 | `references/temporal.md` | `observed_at` / validity vs lifecycle |
 | `references/observations.md` | Typed Observation `assert_batch` example / query |
+| `references/documents.md` | OCR/article text on existing Document; no PDF binary |
 | `references/governance.md` | Provenance limits, dry-run, quality repair |
 | `references/evaluation.md` | Skill eval scenarios (authors / reviewers) |

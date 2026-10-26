@@ -11,34 +11,40 @@ writes.
 
 ## Provenance on the agent surface (what is actually available)
 
-| Capability | Agent surface (18 tools) | Advanced / HTTP |
+| Capability | Agent surface (22 tools) | Advanced / HTTP |
 | --- | --- | --- |
 | Assert / correct / retract facts | Yes | Yes |
-| `ensure_source` | **No** | Yes |
-| `add_evidence` | **No** | Yes |
-| `ingest_source_content` / search source content | **No** | Yes |
+| `ensure_source` | Yes | Yes |
+| `ingest_source_content` / `get_source_content` / `search_source_content` | Yes | Yes |
+| `add_evidence` (statement↔source link) | **No** (typical) | Yes |
 | Optional `confidence` on assert/correct | Yes (statement field) | Yes |
 | Optional statement `metadata` | Yes where the request schema allows | Yes |
+| PDF / binary blob ingest | **No** | **No** (text formats only) |
 
 **What the agent can do today**
 
-- Persist the domain Statement (or Observation batch) itself.
+- Persist domain Statements / Observation batches.
+- Create/reuse Sources and attach **text** document revisions (HTML/Markdown/text),
+  including OCR transcriptions on an existing Document via `document_entity_id`.
+- Read and search stored document bodies.
 - Optionally set `confidence` when the schema allows.
-- Mention the user's source in the conversational reply.
 
-**What the agent cannot do on the default ChatGPT catalog**
+**What the agent still cannot do on the default ChatGPT catalog**
 
-- Create or reuse a first-class Source record.
-- Attach Evidence rows linking a statement to a source/excerpt.
+- Attach Evidence rows linking a *statement* to a source/excerpt (`add_evidence`
+  advanced). Document *body* storage does not require this.
+- Ingest PDF/binary files — use OCR/transcription text instead and say so.
 
-**Honesty rule:** If only the fact was stored, say that the **fact** was
-recorded — do **not** claim provenance/evidence was attached. When the user
-needs durable source linkage, disclose that `ensure_source` / `add_evidence`
-require an advanced surface or HTTP path, and offer to record the fact now
-without fabricated provenance IDs.
+**Honesty rule:** If only a fact was stored (no `ensure_source` /
+`ingest_source_content`), say the **fact** was recorded — do not claim a
+document body or evidence link was attached. If document text was ingested,
+say the **text revision** was stored — do not claim a PDF binary was stored.
+If `add_evidence` was not called, do not claim statement-level evidence rows.
 
 Unknown source reliability stays null when provenance APIs are used — null is
 not “perfect reliability”.
+
+See also `documents.md`.
 
 ## Conflicts (related limit)
 

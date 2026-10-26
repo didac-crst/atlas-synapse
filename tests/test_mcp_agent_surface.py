@@ -19,7 +19,7 @@ def test_agent_surface_is_small_and_intent_shaped() -> None:
     tools = build_mcp_tools(settings=Settings(mcp_tool_surface="agent"))
     names = {tool.name for tool in tools}
     assert names == set(AGENT_TOOL_NAMES)
-    assert len(names) == 18
+    assert len(names) == 22
     assert "search_memory" in names
     assert "get_ontology_proposal" in names
     assert "get_proposal" not in names  # advanced alias only — no agent duplicate
@@ -33,6 +33,11 @@ def test_agent_surface_is_small_and_intent_shaped() -> None:
     assert "correct_statement" in names
     assert "retract_statement" in names
     assert "repair_supersession_integrity" in names
+    assert "ensure_source" in names
+    assert "ingest_source_content" in names
+    assert "get_source_content" in names
+    assert "search_source_content" in names
+    assert "add_evidence" not in names
     assert "supersede_statement" not in names
     assert "get_entity_neighborhood" not in names
     assert "search_entities" not in names
@@ -126,6 +131,11 @@ def test_agent_scenario_coverage_catalog() -> None:
         "Apply approved proposal": {"get_ontology_proposal", "apply_ontology_proposal"},
         "Repair bad supersession edge": {"repair_supersession_integrity"},
         "Typed observation series": {"query_observations"},
+        "Attach OCR text to existing Document": {
+            "ingest_source_content",
+            "get_source_content",
+        },
+        "Search inside a document body": {"search_source_content"},
     }
     for scenario, required_any in scenarios.items():
         assert names & required_any, f"{scenario} missing tools from {required_any}"
