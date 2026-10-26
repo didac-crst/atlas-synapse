@@ -478,7 +478,13 @@ def build_all_mcp_tools() -> list[ToolSpec]:
         ),
         ToolSpec(
             name="search_ontology",
-            description="Search ontology classes and predicates.",
+            description=(
+                "Discover ontology classes, predicates, and aliases by meaning "
+                "(namespace default core). Use when the right class/predicate is "
+                "uncertain, before proposing a new concept, or after a schema/"
+                "validation failure — not mechanically before every assertion when "
+                "the workflow already has verified semantic context."
+            ),
             handler=lambda query, namespace_key="core", limit=25: _call(
                 lambda s: OntologyMCPTools(s).search_ontology(
                     query=query,
@@ -495,11 +501,16 @@ def build_all_mcp_tools() -> list[ToolSpec]:
                 },
                 "required": ["query"],
             },
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         ToolSpec(
             name="get_ontology_context",
-            description="Get conservative ontology context.",
+            description=(
+                "Inspect a class and its applicable predicates/constraints. "
+                "Use after search_ontology (or when a class_key is already known) "
+                "to choose how to model a fact before assert_statement / "
+                "assert_batch / propose_*. Prefer reuse over proposing duplicates."
+            ),
             handler=_get_ontology_context,
             input_schema={
                 "type": "object",
@@ -510,7 +521,7 @@ def build_all_mcp_tools() -> list[ToolSpec]:
                     "namespace_key": {"type": "string", "default": "core"},
                 },
             },
-            surface=McpToolSurface.ADVANCED,
+            surface=McpToolSurface.AGENT,
         ),
         ToolSpec(
             name="get_ontology_proposal",

@@ -24,10 +24,10 @@ HTTP APIs are unchanged.
 
 | Catalog | Tool count |
 | --- | ---: |
-| Full registry (`all`) | **41** (incl. aliases) |
-| Default `agent` | **15** |
+| Full registry (`all`) | **43** (incl. aliases) |
+| Default `agent` | **18** |
 
-Roughly a **~70% reduction** in tools presented to ChatGPT.
+Roughly a **~60% reduction** in tools presented to ChatGPT vs the full registry.
 
 ## Agent catalog
 
@@ -35,6 +35,10 @@ Roughly a **~70% reduction** in tools presented to ChatGPT.
 search_memory
 get_relevant_context
 get_timeline
+query_observations
+
+search_ontology
+get_ontology_context
 
 assert_statement
 assert_batch
@@ -52,7 +56,8 @@ get_ontology_proposal
 apply_ontology_proposal
 ```
 
-(`get_proposal` remains on the advanced surface as an alias.)
+(`get_proposal` remains on the advanced surface as an alias.
+`get_class` / `get_predicate` stay advanced.)
 
 ### Why these are agent-shaped
 
@@ -61,6 +66,9 @@ apply_ontology_proposal
 | `search_memory` | “Look something up” |
 | `get_relevant_context` | “What do we know about X?” |
 | `get_timeline` | “How did this evolve?” |
+| `query_observations` | “List typed measurements for an entity” |
+| `search_ontology` | “Which classes/predicates match this meaning?” |
+| `get_ontology_context` | “What predicates apply to this class?” |
 | `assert_statement` | “Store this fact” |
 | `assert_batch` | “Atomically store related facts / Observations” |
 | `correct_statement` | “Fix this fact” |
@@ -70,6 +78,10 @@ apply_ontology_proposal
 | `answer_semantic_clarification` | “Answer ontology clarification” |
 | `challenge_ontology_review` | “Retry / challenge after review_failed or rejection” |
 | `propose_*` / `apply_*` | Ontology change lifecycle |
+
+Ontology discovery is for **semantic uncertainty** (unfamiliar concept, unsure
+predicate, validation failure, possible ontology drift, before proposing). Do
+not rediscover known, verified concepts on every assertion.
 
 Ontology `apply_ontology_proposal` with `dry_run=true` returns `outcome=WOULD_APPLY`,
 `projected=true`, and statement-style `operation_mode` / `would_persist` fields — the
@@ -83,6 +95,7 @@ embedded proposal snapshot is a projection, not committed state.
 | `get_entity_neighborhood` | Folded into `get_relevant_context` |
 | `search_entities` / `search_statements` | Prefer `search_memory` |
 | `search_semantic_memory` | Advanced alias of `search_memory` |
+| `get_class` / `get_predicate` | Prefer `search_ontology` + `get_ontology_context` |
 | `create_entity` / `get_entity` | Covered by assert EntityInput + context |
 | `get_statement` / `explain_statement` | Prefer mutation `return_mode=standard` |
 | Provenance ingest/search tools | Investigation / pipeline |
@@ -96,11 +109,13 @@ embedded proposal snapshot is a projection, not committed state.
 ```text
 "Who is Didac?"                          → search_memory / get_relevant_context
 "Airbus role context"                    → get_relevant_context / get_timeline
+"Siena height series"                    → query_observations
+"How do I model a measurement?"          → search_ontology → get_ontology_context
 "Correct the start date"                 → correct_statement
-"Store this new fact"                    → assert_statement
+"Store this new fact"                    → assert_statement (discover only if unsure)
 "Import many Observations atomically"    → assert_batch
 "This Didac might already exist"         → assert → answer_identity_clarification
-"Propose a new ontology concept"         → propose_class / propose_predicate
+"Propose a new ontology concept"         → search_ontology first → propose_*
 "Reviewer failed / challenge decision"   → challenge_ontology_review
 "Apply the approved proposal"            → get_ontology_proposal → apply_ontology_proposal
 ```

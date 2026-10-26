@@ -19,12 +19,14 @@ def test_agent_surface_is_small_and_intent_shaped() -> None:
     tools = build_mcp_tools(settings=Settings(mcp_tool_surface="agent"))
     names = {tool.name for tool in tools}
     assert names == set(AGENT_TOOL_NAMES)
-    assert len(names) == 16
+    assert len(names) == 18
     assert "search_memory" in names
     assert "get_ontology_proposal" in names
     assert "get_proposal" not in names  # advanced alias only — no agent duplicate
     assert "get_relevant_context" in names
     assert "query_observations" in names
+    assert "search_ontology" in names
+    assert "get_ontology_context" in names
     assert "assert_statement" in names
     assert "assert_batch" in names
     assert "challenge_ontology_review" in names
@@ -35,6 +37,8 @@ def test_agent_surface_is_small_and_intent_shaped() -> None:
     assert "get_entity_neighborhood" not in names
     assert "search_entities" not in names
     assert "create_entity" not in names
+    assert "get_class" not in names
+    assert "get_predicate" not in names
     assert "get_runtime_config" not in names
 
 
@@ -111,10 +115,17 @@ def test_agent_scenario_coverage_catalog() -> None:
         "Store new fact": {"assert_statement"},
         "Batch Observations": {"assert_batch"},
         "Resolve ambiguous Didac": {"answer_identity_clarification", "assert_statement"},
-        "Propose ontology concept": {"propose_class", "propose_predicate"},
+        "Propose ontology concept": {
+            "search_ontology",
+            "get_ontology_context",
+            "propose_class",
+            "propose_predicate",
+        },
+        "Discover how to model a measurement": {"search_ontology", "get_ontology_context"},
         "Challenge or retry review": {"challenge_ontology_review"},
         "Apply approved proposal": {"get_ontology_proposal", "apply_ontology_proposal"},
         "Repair bad supersession edge": {"repair_supersession_integrity"},
+        "Typed observation series": {"query_observations"},
     }
     for scenario, required_any in scenarios.items():
         assert names & required_any, f"{scenario} missing tools from {required_any}"

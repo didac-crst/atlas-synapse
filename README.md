@@ -377,7 +377,7 @@ See [retrieval-hybrid-v1.md](docs/retrieval-hybrid-v1.md).
 ## MCP surface
 
 Agents interact with semantic operations, not database primitives. The default
-ChatGPT catalog (`MCP_TOOL_SURFACE=agent`) is a **12-tool** intent-shaped surface;
+ChatGPT catalog (`MCP_TOOL_SURFACE=agent`) is an **18-tool** intent-shaped surface;
 `advanced` / `admin` / `all` expand visibility. Surfaces are UX, not authorization.
 
 Grouped by intent (full registry may include more; see the MCP contract):
