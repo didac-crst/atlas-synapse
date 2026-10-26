@@ -1,0 +1,4 @@
+# Optional OpenAI skill appearance / dependency hints.
+# Keep thin; procedural truth lives in SKILL.md + references/.
+display_name: AtlasSynapse Semantic Memory
+short_description: Governed semantic memory workflows for AtlasSynapse MCP.
