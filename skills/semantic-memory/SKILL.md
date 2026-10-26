@@ -6,7 +6,7 @@ description: >
   and retrieval. Prefer live MCP tools over inventing schema or IDs.
 metadata:
   atlas_synapse:
-    skill_version: "0.1.0"
+    skill_version: "0.2.0"
     requires_package_version_min: "0.1.0.dev6"
     expected_tool_surface: agent
     expected_tools:
@@ -44,6 +44,10 @@ fallback in `references/tools.md` or disclose the limitation — do **not**
 silently improvise (for example, do not parse free-text descriptions as a
 substitute for `query_observations`).
 
+`expected_tools` in metadata is **declarative compatibility documentation** for
+authors/CI — not an automatic runtime gate. Still compare against live
+`tools/list` before relying on a named tool.
+
 Load `references/` only when needed for the current task.
 
 ## Operating principles
@@ -60,12 +64,17 @@ Load `references/` only when needed for the current task.
    (`epistemicKind` ∈ hypothesis / recommendation / question / assertion) are
    speech-acts; their interiors are not auto-asserted as facts. Retrieval
    excludes Claims unless `include_claims=true`. See `references/epistemology.md`.
-4. **Prefer correction over rewrite.** Use `correct_statement` / `retract_statement`.
-   Do not hard-delete. Prefer `return_mode=standard` so the mutation response
-   describes the state transition; avoid immediate read-back unless needed.
-5. **Never pass `actor_key`.** The MCP server injects the actor. Mutations need
+4. **Write eligibility is multi-factor.** Authorization, relevance, epistemic
+   status, evidence/confidence, and schema readiness are separate decisions.
+   Well-typed ≠ true or worth storing. See `references/epistemology.md`.
+5. **Evolve knowledge correctly.** Mistaken records → `correct_statement` /
+   `retract_statement`. World change over time → temporally scoped new asserts
+   (not “correct away” true history). Contradictory sources → preserve
+   uncertainty; do not invent a winner. See `references/knowledge-evolution.md`.
+6. **Never pass `actor_key`.** The MCP server injects the actor. Mutations need
    `request_id` + `idempotency_key`; prefer `dry_run=true` to preview.
-6. **Propose ≠ apply.** Ontology changes: discover → `propose_*` → review →
+   Prefer `return_mode=standard` on statement mutations.
+7. **Propose ≠ apply.** Ontology changes: discover → `propose_*` → review →
    `get_ontology_proposal` → `apply_ontology_proposal` only when ready. Challenge
    with `challenge_ontology_review` / answer semantic clarifications as directed.
 
@@ -79,21 +88,24 @@ Load `references/` only when needed for the current task.
 | Unfamiliar modeling / before propose | `search_ontology` → `get_ontology_context` |
 | Store one fact | `assert_statement` |
 | Atomic Observation / multi-fact | `assert_batch` |
-| Fix / withdraw | `correct_statement`, `retract_statement` |
+| Fix mistaken record / withdraw | `correct_statement`, `retract_statement` |
 | Bad supersession edge | `repair_supersession_integrity` |
 | Identity clarify | `answer_identity_clarification` |
 | Ontology lifecycle | `propose_*`, clarifications, `apply_ontology_proposal` |
 
 ## Decision rules (short)
 
-- **Do not assert** when the user is exploring, when evidence is insufficient, or
-  when the right class/predicate is still unknown — discover or ask first.
+- **Do not assert** when exploring, when unauthorized, when evidence is too weak
+  for a domain fact, or when class/predicate is unknown — discover or ask first.
 - **Do not propose** a new class/predicate until `search_ontology` shows no
   adequate reuse candidate (unless the user explicitly overrides after you
   surface the candidates).
-- **Conflicts** require explicit resolve flows; do not assume auto-close.
+- **Do not** use `correct_statement` for ordinary world-change or to silence
+  contradictory sources — see `knowledge-evolution.md`.
+- Open `conflict_ids` are not auto-resolved on the agent surface; disclose and
+  escalate rather than inventing resolve tools.
 - On governance / capability / validation errors: read the error code, fix the
-  input or escalate — do not bypass gates.
+  input or escalate — do not bypass gates or claim success.
 
 ## References (progressive disclosure)
 
@@ -102,8 +114,9 @@ Load `references/` only when needed for the current task.
 | `references/tools.md` | Tool missing, arg shapes, version/capability checks |
 | `references/ontology-discovery.md` | Modeling uncertainty, propose vs reuse |
 | `references/identity.md` | CLARIFY, EntityInput, no silent merges |
+| `references/epistemology.md` | Write eligibility; facts vs Claims vs Decisions |
+| `references/knowledge-evolution.md` | Mistake vs change vs conflicting evidence |
 | `references/temporal.md` | `observed_at` / validity vs lifecycle |
-| `references/epistemology.md` | Facts, Claims, Decisions |
-| `references/observations.md` | Typed Observation create/query |
-| `references/governance.md` | Capabilities, dry-run, quality repair |
+| `references/observations.md` | Typed Observation `assert_batch` example / query |
+| `references/governance.md` | Provenance limits, dry-run, quality repair |
 | `references/evaluation.md` | Skill eval scenarios (authors / reviewers) |

@@ -1,10 +1,10 @@
-# Facts, Claims, Decisions
+# Facts, Claims, Decisions, and write eligibility
 
 ## Domain Statements (facts)
 
-Subject–predicate–object beliefs about the world. Use `assert_statement` /
-`assert_batch` when evidence and ontology allow. These are what ordinary
-retrieval returns.
+Subject–predicate–object beliefs about the world. These are what ordinary
+retrieval returns. Schema validity alone does **not** make a statement true or
+worth storing.
 
 ## Claims (speech-acts)
 
@@ -27,8 +27,24 @@ the user and ontology explicitly support a governed path.
 distinct from Claim `epistemicKind`. Model decisions as entities/statements via
 discovery; do not conflate with recommendations.
 
-## Avoid unnecessary assertions
+## Write eligibility (separate decisions)
 
-Store when the user wants durable memory **and** the proposition is
-well-typed. Prefer clarifying questions, dry-run, or Claim-shaped capture when
-the content is speculative, advisory, or underspecified.
+Before any durable write, treat these as **independent** checks:
+
+| Decision | Question | If no / unclear |
+| --- | --- | --- |
+| **Authorization** | Did the user ask for, or clearly authorize, durable memory for this content? | Do not write; answer in conversation only. |
+| **Relevance** | Is this worth long-term semantic memory (not ephemeral chat noise)? | Do not write; summarize verbally if needed. |
+| **Epistemic status** | Is this a world fact, a speech-act, a decision entity, or still exploratory? | Use Claim-shaped modeling when appropriate; do not promote speculation to domain Statements. |
+| **Evidence / confidence** | Is support strong enough for a domain Statement, or should confidence stay low / unset? | Prefer Claim, lower `confidence`, ask, or wait — schema fit is not verification. |
+| **Schema readiness** | Are class/predicate/object typing known and valid? | Discover ontology or ask; do not invent keys. |
+
+A well-typed proposition can still be false, premature, or unauthorized.
+Conversely, proactive memory is allowed when authorization and relevance are
+clear (for example the user said “remember that…”), even if the agent
+proposed the write — still require epistemic honesty and schema readiness.
+
+### Exploratory conversation
+
+If the user is brainstorming, asking “what if”, or reviewing options without
+asking to store: **do not assert**. Offer to store only when they confirm.
