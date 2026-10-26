@@ -6,7 +6,7 @@ description: >
   and retrieval. Prefer live MCP tools over inventing schema or IDs.
 metadata:
   atlas_synapse:
-    skill_version: "0.2.0"
+    skill_version: "0.2.1"
     requires_package_version_min: "0.1.0.dev6"
     expected_tool_surface: agent
     expected_tools:

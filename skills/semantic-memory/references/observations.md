@@ -15,6 +15,22 @@ Domain-neutral example (shape matches the implemented batch contract /
 `test_assert_batch_creates_observation_atomically`). Replace UUIDs and times
 with session values; prefer `dry_run=true` first.
 
+### Measurement time (do not invent clock precision)
+
+- If the true measurement instant is known, set `observed_at` to that instant.
+- If only a calendar day (or coarser) is known: prefer `observed_at: null`
+  rather than inventing `T12:00:00Z`.
+- Backend convention for approximate dates: store precision in statement
+  `metadata.date_precision` (e.g. `"day"`, `"month"`) when the write path
+  accepts metadata. **`assert_batch` statement items currently have no
+  `metadata` field** — so on batch creates, leave `observed_at` null when the
+  clock time is unknown, and disclose that precision metadata was not attached.
+  Do not silently treat noon placeholders as measured times. If a placeholder
+  datetime is unavoidable for a non-batch path that supports metadata, set
+  `date_precision` and tell the user the clock is not authoritative.
+- On `query_observations`, when `date_precision` is present, treat clock time
+  as a placeholder, not measured time.
+
 ```json
 {
   "payload": {
@@ -47,7 +63,7 @@ with session values; prefer `dry_run=true` first.
         "subject_client_item_id": "obs-1",
         "predicate_key": "numericValue",
         "object_number": 21.5,
-        "observed_at": "2026-03-01T12:00:00Z"
+        "observed_at": null
       },
       {
         "client_item_id": "unit-1",
@@ -59,6 +75,9 @@ with session values; prefer `dry_run=true` first.
   }
 }
 ```
+
+In the example above, only the calendar day is known, so `observed_at` is
+null — not a fabricated noon UTC timestamp.
 
 ### Expected success shape
 

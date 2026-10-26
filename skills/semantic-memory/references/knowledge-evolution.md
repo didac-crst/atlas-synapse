@@ -6,15 +6,28 @@ them through `correct_statement`.
 | Situation | Meaning | Agent workflow (agent surface) |
 | --- | --- | --- |
 | **Mistaken record** | The stored statement was never an accurate report of the world (wrong value, wrong dates, wrong object). | `correct_statement` on that `statement_id` (supersedes; history kept). Or `retract_statement` if it should not remain as current knowledge. |
-| **World changed** | The prior statement was true for an interval; a later state is different. | Prefer a **new** `assert_statement` with non-overlapping `valid_from` / `valid_to`. If the prior open-ended interval should end, `correct_statement` only to set an accurate `valid_to` on the *historical* statement (and/or assert the successor). Do not supersede away a still-true past interval. |
+| **World changed** | The prior statement was true for an interval; a later state is different. | Prefer a **new** `assert_statement` with non-overlapping `valid_from` / `valid_to`. If the prior open-ended interval should end, `correct_statement` may set an accurate `valid_to` — knowing this **supersedes** the prior row (see below). Do not use correction to erase a still-true past interval’s meaning. |
 | **Contradictory sources** | Two reports disagree; neither is known to be a recording error. | Preserve both as distinct assertions (or Claims when speech-acts). Do **not** arbitrarily “correct” one into the other. Overlapping cardinality-one writes may record `conflict_ids`; both statements remain asserted. |
 
 ## Why this matters
 
 `correct_statement` always **supersedes** the previous statement (lifecycle →
-`SUPERSEDED`). That is correct for fixing a mistake. Using it to “update” a
-fact that was historically true erases the temporal meaning of that past
-interval.
+`SUPERSEDED`) and creates a new asserted successor. That preserves an auditable
+history, but **only the successor is active** — the prior statement is no longer
+an active effective fact, even when you only intended to close `valid_to`.
+
+Implications for agents:
+
+- Closing an open-ended interval via `correct_statement` is still a supersession,
+  not an in-place edit. The corrected validity lives on the **new** statement.
+- After such a write, verify with `get_timeline` (or relevant retrieval) rather
+  than assuming every earlier statement remains active.
+- Prefer a fresh temporally bounded `assert_statement` for the new world state
+  when that better matches “was true then, different now,” and use correction
+  for `valid_to` only when you intentionally replace the open-ended record.
+
+Using `correct_statement` to overwrite object/value as if the past never held
+is wrong when the prior interval was genuinely true.
 
 Non-overlapping validity windows do **not** create cardinality conflicts
 (implemented behavior). Overlapping cardinality-one statements can both stay
