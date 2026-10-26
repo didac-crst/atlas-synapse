@@ -66,12 +66,14 @@ scripts, or directory submission.
 ## Release sequence (revised)
 
 1. Keep tunnel MCP / 18-tool agent surface as-is (no packaging-driven redeploy).
-2. Manually assemble a minimal Agent Plugins package pointing at
-   `skills/semantic-memory/` (or a tiny probe skill) and test install in ChatGPT
-   alongside the existing Tunnel connector.
-3. Only if A works: add sync/ZIP automation that **copies from Git → plugin/**.
-4. If A fails: document failure mode; use C as interim with regenerate-from-Git
-   discipline.
+2. Run the **minimal Option A experiment** documented in
+   [skill-packaging-experiment.md](skill-packaging-experiment.md):
+   `plugin/` + `scripts/build_skill_plugin_zip.sh` produce a skills-only ZIP
+   (`mcpServers` empty); install beside the existing Tunnel connector.
+3. Only if A passes: extend automation as needed; run the 17 skill evaluation
+   scenarios with the skill installed.
+4. If A fails: document failure mode in the experiment doc; use C as interim
+   with regenerate-from-Git discipline.
 
 ## Interim mechanism (C) — limitations
 

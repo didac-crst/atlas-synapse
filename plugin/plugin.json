@@ -1,0 +1,53 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "atlas-synapse",
+  "version": "0.2.1-exp",
+  "description": "Experimental AtlasSynapse Semantic Memory skill. MCP tools remain on the separate Secure Tunnel connector.",
+  "author": {
+    "name": "Didac",
+    "url": "https://github.com/didac-crst"
+  },
+  "homepage": "https://github.com/didac-crst/atlas-synapse",
+  "license": "Proprietary",
+  "keywords": [
+    "semantic-memory",
+    "ontology",
+    "knowledge-graph",
+    "atlas-synapse"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "AtlasSynapse",
+        "shortDescription": "Governed semantic memory skill",
+        "longDescription": "Experimental packaging of the AtlasSynapse Semantic Memory skill. Install alongside the existing AtlasSynapse Secure MCP Tunnel connector. This ZIP does not embed MCP tools — use the tunnel for the 18-tool agent surface. Do not treat this package as production directory distribution.",
+        "developerName": "Didac",
+        "category": "Productivity",
+        "capabilities": [
+          "Guide semantic memory tool use",
+          "Identity-safe write workflows",
+          "Ontology discovery when uncertain",
+          "Temporal and epistemic decision rules"
+        ],
+        "websiteURL": "https://github.com/didac-crst/atlas-synapse",
+        "supportURL": "https://github.com/didac-crst/atlas-synapse/issues",
+        "privacyPolicyURL": "https://github.com/didac-crst/atlas-synapse/blob/main/README.md",
+        "termsOfServiceURL": "https://github.com/didac-crst/atlas-synapse/blob/main/README.md",
+        "defaultPrompt": [
+          "What AtlasSynapse tools do you have, and is the semantic-memory skill available?",
+          "Before writing memory, explain when you would search the ontology versus reuse known keys."
+        ],
+        "brandColor": "#E8705C",
+        "brandColorDark": "#FC6450",
+        "composerIcon": "./assets/icon.png",
+        "composerIconDark": "./assets/icon-dark.png",
+        "logo": "./assets/logo.png",
+        "logoDark": "./assets/logo-dark.png"
+      },
+      "onboardingSkill": "./skills/semantic-memory/SKILL.md",
+      "publication": {
+        "release_notes": "Controlled Option A experiment: skills-only plugin ZIP + existing tunnel MCP. Not a directory submission."
+      }
+    }
+  }
+}
