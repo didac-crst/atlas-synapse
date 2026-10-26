@@ -49,6 +49,7 @@ AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "search_memory",
         "get_relevant_context",
         "get_timeline",
+        "query_observations",
         "assert_statement",
         "assert_batch",
         "correct_statement",

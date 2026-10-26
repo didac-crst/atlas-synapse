@@ -54,6 +54,7 @@ from semantic_memory.schemas.provenance import (
     SearchSourceContentResponse,
 )
 from semantic_memory.schemas.retrieval import (
+    QueryObservationsRequest,
     RelevantContextRequest,
     SearchEntitiesRequest,
     SearchSemanticMemoryRequest,
@@ -110,6 +111,11 @@ def prepare_mcp_mutation_payload(session: Session, payload: dict[str, Any]) -> d
     return prepared
 
 
+def prepare_mcp_read_payload(session: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    """Inject MCP actor for authorized read tools that require actor_key."""
+    return prepare_mcp_mutation_payload(session, payload)
+
+
 def _run_mutation[T: BaseModel](
     session: Session,
     payload: dict[str, Any],
@@ -140,6 +146,7 @@ class RetrievalMCPTools:
     """Translate MCP tool calls into retrieval service operations."""
 
     def __init__(self, session: Session) -> None:
+        self._session = session
         self._retrieval = RetrievalService(session)
 
     def search_entities(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -206,6 +213,20 @@ class RetrievalMCPTools:
                 ValidationFailedError(
                     "Invalid relevant context request", details={"error": str(exc)}
                 )
+            )
+
+    def query_observations(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            prepared = prepare_mcp_read_payload(self._session, payload)
+            result = self._retrieval.query_observations(
+                QueryObservationsRequest.model_validate(prepared)
+            )
+            return result.model_dump(mode="json")
+        except (DomainError, ValidationError, ValueError) as exc:
+            if isinstance(exc, DomainError):
+                return _error(exc)
+            return _error(
+                ValidationFailedError("Invalid observation query", details={"error": str(exc)})
             )
 
 

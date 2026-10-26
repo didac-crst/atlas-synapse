@@ -13,6 +13,8 @@ from semantic_memory.db import get_db_session
 from semantic_memory.models.enums import EntityStatus, StatementStatus
 from semantic_memory.schemas.retrieval import (
     NeighborhoodResponse,
+    QueryObservationsRequest,
+    QueryObservationsResponse,
     RelevantContextRequest,
     RelevantContextResponse,
     SearchEntitiesRequest,
@@ -158,3 +160,11 @@ def get_relevant_context(
     request: RelevantContextRequest, session: DbSession
 ) -> RelevantContextResponse:
     return RetrievalService(session).get_relevant_context(request)
+
+
+@router.post("/observations/query", response_model=QueryObservationsResponse)
+def query_observations(
+    body: QueryObservationsRequest, session: DbSession
+) -> QueryObservationsResponse:
+    """Paginated typed Observation series (observationOf + type + value + unit)."""
+    return RetrievalService(session).query_observations(body)

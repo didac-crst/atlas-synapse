@@ -56,6 +56,19 @@ the prior reading was wrong.
 Use `correct_statement` on the mistaken `numericValue` (or other) statement. History
 is preserved via supersession.
 
+### Retrieve a measurement series
+
+Prefer `query_observations` (HTTP `POST /v1/observations/query`, MCP agent tool)
+over N+1 `get_timeline` / `search_statements` calls:
+
+1. Pass `entity_id` of the subject Thing (e.g. person or device).
+2. Optionally filter `observation_type` and `observed_from` / `observed_to`.
+3. Read typed `value`, `unit`, `observed_at` from the page — do not parse descriptions.
+4. `total` counts only complete, non-ambiguous matches; incomplete/ambiguous candidates
+   appear in `skipped` / `ambiguous` (never silently dropped).
+5. `observed_at` is returned as stored; when `date_precision` is present on the
+   numericValue metadata, treat clock time as a placeholder, not measured time.
+
 ### Duplicate import vs identical values
 
 - Same MCP `idempotency_key` → replay (safe).

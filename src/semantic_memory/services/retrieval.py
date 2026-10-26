@@ -25,6 +25,7 @@ from semantic_memory.models import (
     Statement,
     StatementStatus,
 )
+from semantic_memory.models.capabilities import Capability
 from semantic_memory.observability.request_context import set_last_timings
 from semantic_memory.observability.timing import RequestTimer
 from semantic_memory.repositories.entities import EntityRepository
@@ -33,9 +34,15 @@ from semantic_memory.repositories.provenance import ProvenanceRepository
 from semantic_memory.repositories.statements import StatementRepository
 from semantic_memory.schemas.entities import EntityResponse
 from semantic_memory.schemas.retrieval import (
+    AmbiguousObservation,
     MemoryHitType,
     NeighborhoodEdge,
     NeighborhoodResponse,
+    ObservationHit,
+    ObservationQuerySkipped,
+    ObservationSourceRef,
+    QueryObservationsRequest,
+    QueryObservationsResponse,
     RankedEntityHit,
     RankedStatementHit,
     RankingSignals,
@@ -48,6 +55,7 @@ from semantic_memory.schemas.retrieval import (
     SearchStatementsRequest,
     SearchStatementsResponse,
     SemanticMemoryHit,
+    SortOrder,
     TemporalState,
 )
 from semantic_memory.schemas.statements import StatementResponse, TimelineResponse
@@ -55,6 +63,7 @@ from semantic_memory.seeding.claim_ontology import (
     CLAIM_BINDING_PREDICATE_KEYS,
     CLAIM_CLASS_KEY,
 )
+from semantic_memory.services.actors import ActorService
 from semantic_memory.services.conflicts import ConflictService
 from semantic_memory.services.entities import EntityService
 from semantic_memory.services.lexical import (
@@ -121,6 +130,7 @@ class RetrievalService:
         self._provenance = ProvenanceService(session)
         self._conflicts = ConflictService(session)
         self._memory_quality = MemoryQualityService(session)
+        self._actors = ActorService(session)
 
     def _claim_typed_entity_exists(self) -> Any:
         """Correlated EXISTS: Entity.id is typed as Claim."""
@@ -1441,3 +1451,261 @@ class RetrievalService:
             intent=intent,
         )
         return score
+
+    def query_observations(self, request: QueryObservationsRequest) -> QueryObservationsResponse:
+        """Return a paginated typed Observation series for a subject entity.
+
+        Assembles observationOf + observationType + numericValue + unit in one
+        response. Incomplete and ambiguous observations are excluded from
+        ``observations`` and reported in ``skipped`` / ``ambiguous``.
+        """
+        actor = self._actors.require_active_actor(request.actor_key)
+        self._actors.require_capability(actor, Capability.KNOWLEDGE_READ)
+
+        subject = self._entities.get(request.entity_id)
+        if subject is None:
+            raise UnknownEntityError(
+                f"Entity {request.entity_id} was not found",
+                details={"entity_id": str(request.entity_id)},
+            )
+
+        notes = [
+            "total counts valid complete observations after filters; "
+            "skipped/ambiguous candidates are excluded from observations.",
+            "observed_at is returned as stored; clock time may be a date placeholder.",
+            "Multiple asserted values for a cardinality-one predicate flag the "
+            "observation as ambiguous — no value is chosen arbitrarily.",
+        ]
+
+        pred_of = self._ontology.get_predicate_by_key(
+            namespace_key=request.namespace_key, predicate_key="observationOf"
+        )
+        pred_type = self._ontology.get_predicate_by_key(
+            namespace_key=request.namespace_key, predicate_key="observationType"
+        )
+        pred_value = self._ontology.get_predicate_by_key(
+            namespace_key=request.namespace_key, predicate_key="numericValue"
+        )
+        pred_unit = self._ontology.get_predicate_by_key(
+            namespace_key=request.namespace_key, predicate_key="unit"
+        )
+        if pred_of is None or pred_type is None or pred_value is None or pred_unit is None:
+            return QueryObservationsResponse(
+                entity_id=request.entity_id,
+                observation_type=request.observation_type,
+                total=0,
+                limit=request.limit,
+                offset=request.offset,
+                order_by=request.order_by,
+                order=request.order,
+                skipped=ObservationQuerySkipped(),
+                notes=notes + ["Observation predicates are not installed in this namespace."],
+            )
+
+        identity_ids = self._entities.identity_group_ids(request.entity_id)
+        of_rows = list(
+            self._session.scalars(
+                select(Statement).where(
+                    Statement.predicate_id == pred_of.id,
+                    Statement.status == StatementStatus.ASSERTED.value,
+                    Statement.object_entity_id.in_(identity_ids),
+                )
+            ).all()
+        )
+        if not of_rows:
+            return QueryObservationsResponse(
+                entity_id=request.entity_id,
+                observation_type=request.observation_type,
+                total=0,
+                limit=request.limit,
+                offset=request.offset,
+                order_by=request.order_by,
+                order=request.order,
+                skipped=ObservationQuerySkipped(),
+                notes=notes,
+            )
+
+        # One observationOf edge per Observation subject (MANY is allowed across
+        # subjects; multiple edges from the same subject to the same identity
+        # group are treated as ambiguous linkage).
+        of_by_subject: dict[uuid.UUID, list[Statement]] = {}
+        for row in of_rows:
+            of_by_subject.setdefault(row.subject_entity_id, []).append(row)
+
+        obs_ids = list(of_by_subject.keys())
+        observation_class_ids = {
+            row
+            for row in self._session.scalars(
+                select(EntityType.entity_id)
+                .join(OntologyClass, OntologyClass.id == EntityType.class_id)
+                .where(
+                    EntityType.entity_id.in_(obs_ids),
+                    OntologyClass.key == "Observation",
+                )
+            ).all()
+        }
+
+        typed_rows = list(
+            self._session.scalars(
+                select(Statement).where(
+                    Statement.subject_entity_id.in_(obs_ids),
+                    Statement.status == StatementStatus.ASSERTED.value,
+                    Statement.predicate_id.in_([pred_type.id, pred_value.id, pred_unit.id]),
+                )
+            ).all()
+        )
+        by_obs: dict[uuid.UUID, dict[str, list[Statement]]] = {
+            oid: {"type": [], "value": [], "unit": []} for oid in obs_ids
+        }
+        for row in typed_rows:
+            bucket = by_obs[row.subject_entity_id]
+            if row.predicate_id == pred_type.id:
+                bucket["type"].append(row)
+            elif row.predicate_id == pred_value.id:
+                bucket["value"].append(row)
+            elif row.predicate_id == pred_unit.id:
+                bucket["unit"].append(row)
+
+        skipped = ObservationQuerySkipped()
+        ambiguous: list[AmbiguousObservation] = []
+        valid: list[ObservationHit] = []
+
+        type_filter = request.observation_type
+        for obs_id, of_list in of_by_subject.items():
+            if obs_id not in observation_class_ids:
+                skipped.not_observation_class += 1
+                continue
+
+            reasons: list[str] = []
+            if len(of_list) != 1:
+                reasons.append("ambiguous_observationOf")
+
+            buckets = by_obs[obs_id]
+            type_rows = buckets["type"]
+            value_rows = buckets["value"]
+            unit_rows = buckets["unit"]
+
+            if type_filter is not None:
+                matching_types = [
+                    row for row in type_rows if (row.object_string or "") == type_filter
+                ]
+                if not type_rows:
+                    skipped.missing_observation_type += 1
+                    continue
+                if not matching_types:
+                    # Different type(s) only — not a candidate for this filter.
+                    continue
+                if len(type_rows) != 1 or len(matching_types) != 1:
+                    reasons.append("ambiguous_observationType")
+                type_rows = matching_types
+            else:
+                if not type_rows:
+                    skipped.missing_observation_type += 1
+                    continue
+                if len(type_rows) != 1:
+                    reasons.append("ambiguous_observationType")
+
+            if not value_rows:
+                skipped.missing_numeric_value += 1
+                continue
+            if len(value_rows) != 1:
+                reasons.append("ambiguous_numericValue")
+            elif value_rows[0].object_number is None:
+                skipped.missing_numeric_value += 1
+                continue
+
+            if not unit_rows:
+                skipped.missing_unit += 1
+                continue
+            if len(unit_rows) != 1:
+                reasons.append("ambiguous_unit")
+            elif not unit_rows[0].object_string:
+                skipped.missing_unit += 1
+                continue
+
+            type_stmt = type_rows[0]
+            if not type_stmt.object_string:
+                skipped.missing_observation_type += 1
+                continue
+
+            if reasons:
+                skipped.ambiguous_values += 1
+                ambiguous.append(AmbiguousObservation(id=obs_id, reasons=reasons))
+                continue
+
+            value_stmt = value_rows[0]
+            unit_stmt = unit_rows[0]
+            of_stmt = of_list[0]
+
+            if value_stmt.observed_at is None:
+                skipped.missing_observed_at += 1
+                continue
+
+            observed_at = value_stmt.observed_at
+            if request.observed_from is not None and observed_at < request.observed_from:
+                continue
+            if request.observed_to is not None and observed_at > request.observed_to:
+                continue
+
+            meta = value_stmt.metadata_json or {}
+            raw_precision = meta.get("date_precision")
+            date_precision = str(raw_precision) if raw_precision is not None else None
+
+            valid.append(
+                ObservationHit(
+                    id=obs_id,
+                    observation_type=str(type_stmt.object_string),
+                    value=value_stmt.object_number,
+                    unit=str(unit_stmt.object_string),
+                    observed_at=observed_at,
+                    date_precision=date_precision,
+                    numeric_value_statement_id=value_stmt.id,
+                    unit_statement_id=unit_stmt.id,
+                    observation_type_statement_id=type_stmt.id,
+                    observation_of_statement_id=of_stmt.id,
+                    sources=[],
+                )
+            )
+
+        reverse = request.order == SortOrder.DESC
+        valid.sort(key=lambda hit: (hit.observed_at, hit.id), reverse=reverse)
+
+        total = len(valid)
+        page = valid[request.offset : request.offset + request.limit]
+
+        if request.include_sources and page:
+            for hit in page:
+                evidence_rows = self._provenance_repo.list_evidence_for_statement(
+                    hit.numeric_value_statement_id
+                )
+                sources: list[ObservationSourceRef] = []
+                for evidence in evidence_rows:
+                    source = self._provenance_repo.get_source(evidence.source_id)
+                    if source is None:
+                        continue
+                    sources.append(
+                        ObservationSourceRef(
+                            evidence_id=evidence.id,
+                            source_id=source.id,
+                            source_title=source.title,
+                            source_uri=source.uri,
+                            reliability=source.reliability,
+                            excerpt=evidence.excerpt,
+                            locator=evidence.locator,
+                        )
+                    )
+                hit.sources = sources
+
+        return QueryObservationsResponse(
+            entity_id=request.entity_id,
+            observation_type=request.observation_type,
+            total=total,
+            limit=request.limit,
+            offset=request.offset,
+            order_by=request.order_by,
+            order=request.order,
+            skipped=skipped,
+            ambiguous=ambiguous,
+            observations=page,
+            notes=notes,
+        )

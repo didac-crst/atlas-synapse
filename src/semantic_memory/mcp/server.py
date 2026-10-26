@@ -35,7 +35,10 @@ from semantic_memory.schemas.proposals import (
     ProposeConstraintRequest,
     ProposePredicateRequest,
 )
-from semantic_memory.schemas.retrieval import SearchStatementsRequest
+from semantic_memory.schemas.retrieval import (
+    QueryObservationsRequest,
+    SearchStatementsRequest,
+)
 from semantic_memory.schemas.semantic_review import (
     AnswerSemanticClarificationRequest,
     ChallengeOntologyReviewRequest,
@@ -430,6 +433,17 @@ def build_all_mcp_tools() -> list[ToolSpec]:
             "Claims excluded for ordinary entities unless include_claims=true; "
             "direct Claim entity_id lookup returns Claim structure.",
             lambda session, payload: RetrievalMCPTools(session).get_relevant_context(payload),
+            surface=McpToolSurface.AGENT,
+        ),
+        _payload_tool(
+            "query_observations",
+            "Retrieve a paginated typed Observation series for an entity "
+            "(observationOf + observationType + numericValue + unit) in one call. "
+            "Supports type/date filters and chronological sort. Prefer this over "
+            "N+1 get_timeline/search_statements for measurement trajectories. "
+            "Incomplete/ambiguous observations are reported in skipped/ambiguous.",
+            lambda session, payload: RetrievalMCPTools(session).query_observations(payload),
+            request_model=QueryObservationsRequest,
             surface=McpToolSurface.AGENT,
         ),
         ToolSpec(

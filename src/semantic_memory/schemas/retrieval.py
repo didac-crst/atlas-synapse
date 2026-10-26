@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -218,3 +219,119 @@ class RelevantContextResponse(BaseModel):
     ranking_explanations: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     quality_warnings: list[QualityWarning] = Field(default_factory=list)
+
+
+class ObservationSortField(StrEnum):
+    OBSERVED_AT = "observed_at"
+
+
+class SortOrder(StrEnum):
+    ASC = "asc"
+    DESC = "desc"
+
+
+class QueryObservationsRequest(BaseModel):
+    """Paginated typed Observation series for a subject entity.
+
+    ``total`` counts only valid (complete, non-ambiguous) observations after
+    filters. Incomplete/ambiguous candidates are excluded from ``observations``
+    and counted in ``skipped`` — never silently dropped.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    actor_key: str = Field(
+        min_length=1,
+        description="Caller actor; must hold knowledge.read (same gate as knowledge access).",
+    )
+    entity_id: uuid.UUID = Field(
+        description="Subject Thing whose observations are requested (via observationOf)."
+    )
+    observation_type: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Optional exact observationType filter (e.g. height, temperature).",
+    )
+    observed_from: datetime | None = None
+    observed_to: datetime | None = None
+    order_by: ObservationSortField = ObservationSortField.OBSERVED_AT
+    order: SortOrder = SortOrder.ASC
+    limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+    include_sources: bool = Field(
+        default=False,
+        description="When true, attach evidence/sources for the numericValue statement.",
+    )
+    namespace_key: str = "core"
+
+    @model_validator(mode="after")
+    def _date_range(self) -> QueryObservationsRequest:
+        if (
+            self.observed_from is not None
+            and self.observed_to is not None
+            and self.observed_from > self.observed_to
+        ):
+            raise ValueError("observed_from must be <= observed_to")
+        return self
+
+
+class ObservationQuerySkipped(BaseModel):
+    """Candidates matching entity (and type filter, when set) that were excluded."""
+
+    missing_observation_type: int = 0
+    missing_numeric_value: int = 0
+    missing_unit: int = 0
+    missing_observed_at: int = 0
+    ambiguous_values: int = 0
+    not_observation_class: int = 0
+
+
+class ObservationSourceRef(BaseModel):
+    evidence_id: uuid.UUID
+    source_id: uuid.UUID
+    source_title: str | None = None
+    source_uri: str | None = None
+    reliability: Decimal | None = None
+    excerpt: str | None = None
+    locator: str | None = None
+
+
+class AmbiguousObservation(BaseModel):
+    id: uuid.UUID
+    reasons: list[str] = Field(default_factory=list)
+
+
+class ObservationHit(BaseModel):
+    id: uuid.UUID
+    observation_type: str
+    value: Decimal
+    unit: str
+    observed_at: datetime
+    date_precision: str | None = Field(
+        default=None,
+        description=(
+            "Optional precision hint from numericValue metadata (e.g. day). "
+            "observed_at is returned as stored; noon UTC does not imply clock time."
+        ),
+    )
+    numeric_value_statement_id: uuid.UUID
+    unit_statement_id: uuid.UUID
+    observation_type_statement_id: uuid.UUID
+    observation_of_statement_id: uuid.UUID
+    sources: list[ObservationSourceRef] = Field(default_factory=list)
+
+
+class QueryObservationsResponse(BaseModel):
+    entity_id: uuid.UUID
+    observation_type: str | None = None
+    total: int = Field(
+        description="Count of valid observations matching filters (pagination universe)."
+    )
+    limit: int
+    offset: int
+    order_by: ObservationSortField
+    order: SortOrder
+    skipped: ObservationQuerySkipped
+    ambiguous: list[AmbiguousObservation] = Field(default_factory=list)
+    observations: list[ObservationHit] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
